@@ -1,0 +1,7 @@
+00500093
+00508113
+01410193
+00500093  // 1. addi x1, x0, 5   (x1 becomes 5)
+00508113  // 2. addi x2, x1, 5   (x2 becomes 10)
+00209293  // 3. slli x5, x1, 2   (Shift x1 left by 2 -> Store in x5)
+00115313  // 4. srli x6, x2, 1   (Shift x2 right by 1 -> Store in x6)
