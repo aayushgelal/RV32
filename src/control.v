@@ -46,6 +46,26 @@ module control(
                     default: alu_control = 3'b000;
                 endcase
             end
+
+            // LOAD (lw) -> Read from Memory, Write to Register
+            7'b0000011: begin
+                reg_write = 1;      // Yes, we save the result
+                alu_src = 1;        // Address = Reg + Immediate
+                mem_write = 0;      // Read Only
+                result_src = 1;     // <--- KEY: Save Data from Memory, NOT ALU
+                alu_control = 3'b000; // ADD (to calculate address)
+            end
+            
+            //store
+
+            7'b0100011: begin
+                reg_write = 0;      
+                alu_src = 1;        // Address = Reg + Immediate
+                mem_write = 1;      // <--- KEY: Write ENABLED
+                result_src = 0;     // Doesn't matter (reg_write is 0)
+                alu_control = 3'b000; // ADD (to calculate address)
+            end
+        
         endcase
     end
 endmodule
