@@ -195,8 +195,9 @@ module top(
     // forward_a/forward_b: 00=no fwd, 10=from EX/MEM, 01=from MEM/WB
 
     // Value to forward from EX/MEM (ALU result or PC+4 for JAL/JALR)
-    assign ex_mem_fwd_val = (ex_mem_result_src == 2'b10) ? ex_mem_pc_plus4
-                                                          : ex_mem_alu_result;
+    assign ex_mem_fwd_val = (ex_mem_result_src == 2'b10) ? ex_mem_pc_plus4 :
+                           (ex_mem_result_src == 2'b01) ? 32'b0 :
+                                                          ex_mem_alu_result;
 
     always @(*) begin
         // --- Forward A (rs1) ---
