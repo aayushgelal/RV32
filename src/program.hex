@@ -1,8 +1,43 @@
-00500093  // 1. addi x1, x0, 5     (x1 = 5)
-00508113  // 2. addi x2, x1, 5     (x2 = 10)
-00209293  // 3. slli x5, x1, 2     (x5 = x1 << 2 = 20)
-00115313  // 4. srli x6, x2, 1     (x6 = x2 >> 1 = 5)
-00112023  // 5. sw   x1, 0(x2)     (mem[10] = 5)
-00212223  // 6. sw   x2, 4(x2)     (mem[14] = 10)
-00012383  // 7. lw   x7, 0(x2)     (x7 = mem[10] = 5)
-00412403  // 8. lw   x8, 4(x2)     (x8 = mem[14] = 10)
+00500093  // 0x00: addi x1, x0, 5     (x1 = 5)
+00500113  // 0x04: addi x2, x0, 5     (x2 = 5)
+00A00193  // 0x08: addi x3, x0, 10    (x3 = 10)
+
+// --- TEST 1: BEQ taken (x1 == x2) ---
+00208663  // 0x0C: beq  x1, x2, +12   (should jump to 0x18)
+00100213  // 0x10: addi x4, x0, 1     (SKIPPED)
+00100213  // 0x14: addi x4, x0, 1     (SKIPPED)
+00000213  // 0x18: addi x4, x0, 0     (x4 = 0, lands here)
+
+// --- TEST 2: BEQ not taken (x1 != x3) ---
+00308463  // 0x1C: beq  x1, x3, +8    (should NOT jump, x1 != x3)
+06300293  // 0x20: addi x5, x0, 99    (x5 = 99, should execute)
+
+// --- TEST 3: BNE taken (x1 != x3) ---
+00309663  // 0x24: bne  x1, x3, +12   (should jump to 0x30)
+00100313  // 0x28: addi x6, x0, 1     (SKIPPED)
+00100313  // 0x2C: addi x6, x0, 1     (SKIPPED)
+00000313  // 0x30: addi x6, x0, 0     (x6 = 0, lands here)
+
+// --- TEST 4: BNE not taken (x1 == x2) ---
+00209463  // 0x34: bne  x1, x2, +8    (should NOT jump, x1 == x2)
+06300393  // 0x38: addi x7, x0, 99    (x7 = 99, should execute)
+
+// --- TEST 5: BLT taken (x1 < x3, 5 < 10) ---
+0030C663  // 0x3C: blt  x1, x3, +12   (should jump to 0x48)
+00100E13  // 0x40: addi x28, x0, 1    (SKIPPED)
+00100E13  // 0x44: addi x28, x0, 1    (SKIPPED)
+00000E13  // 0x48: addi x28, x0, 0    (x28 = 0, lands here)
+
+// --- TEST 6: BLT not taken (x3 >= x1, 10 >= 5) ---
+0010CE63  // 0x4C: blt  x1, x1, +28   (should NOT jump, x1 == x1)
+06300E93  // 0x50: addi x29, x0, 99   (x29 = 99, should execute)
+
+// --- TEST 7: BGE taken (x1 >= x1) ---
+0010D663  // 0x54: bge  x1, x1, +12   (should jump to 0x60)
+00100F13  // 0x58: addi x30, x0, 1    (SKIPPED)
+00100F13  // 0x5C: addi x30, x0, 1    (SKIPPED)
+00000F13  // 0x60: addi x30, x0, 0    (x30 = 0, lands here)
+
+// --- TEST 8: BGE not taken (x1 < x3, 5 < 10) ---
+0030D463  // 0x64: bge  x1, x3, +8    (should NOT jump, 5 < 10)
+06300F93  // 0x68: addi x31, x0, 99   (x31 = 99, should execute)

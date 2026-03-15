@@ -26,16 +26,23 @@ module top_tb;
         reset = 0; // Let the CPU run!
 
         // 4. Run for a few cycles
-        #100;
+        #300;
 
         // 5. Print register values to verify
         $display("=== Register File State ===");
-        $display("x1  = %0d (expect 5)",  uut.reg_unit.rf[1]);
-        $display("x2  = %0d (expect 10)", uut.reg_unit.rf[2]);
-        $display("x5  = %0d (expect 20)", uut.reg_unit.rf[5]);
-        $display("x6  = %0d (expect 5)",  uut.reg_unit.rf[6]);
-        $display("x7  = %0d (expect 5)",  uut.reg_unit.rf[7]);
-        $display("x8  = %0d (expect 10)", uut.reg_unit.rf[8]);
+        $display("x1  = %0d (expect 5)",   uut.reg_unit.rf[1]);
+        $display("x2  = %0d (expect 5)",   uut.reg_unit.rf[2]);
+        $display("x3  = %0d (expect 10)",  uut.reg_unit.rf[3]);
+        $display("--- Branch Taken Tests ---");
+        $display("x4  = %0d (expect 0,  BEQ taken)",    uut.reg_unit.rf[4]);
+        $display("x6  = %0d (expect 0,  BNE taken)",    uut.reg_unit.rf[6]);
+        $display("x28 = %0d (expect 0,  BLT taken)",    uut.reg_unit.rf[28]);
+        $display("x30 = %0d (expect 0,  BGE taken)",    uut.reg_unit.rf[30]);
+        $display("--- Branch Not-Taken Tests ---");
+        $display("x5  = %0d (expect 99, BEQ not taken)", uut.reg_unit.rf[5]);
+        $display("x7  = %0d (expect 99, BNE not taken)", uut.reg_unit.rf[7]);
+        $display("x29 = %0d (expect 99, BLT not taken)", uut.reg_unit.rf[29]);
+        $display("x31 = %0d (expect 99, BGE not taken)", uut.reg_unit.rf[31]);
 
         $finish;
     end

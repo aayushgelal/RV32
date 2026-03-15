@@ -13,7 +13,7 @@ module alu(
             3'b010: result = src1 & src2;           // AND
             3'b011: result = src1 | src2;           // OR
             3'b100: result = src1 ^ src2;           // XOR
-            3'b101: result = (src1 < src2) ? 1 : 0; // SLT (Set Less Than)
+            3'b101: result = ($signed(src1) < $signed(src2)) ? 1 : 0; // SLT (Set Less Than, signed)
             3'b110: result = src1 << src2[4:0];     // SLL (Shift Left)
             3'b111: result = src1 >> src2[4:0];     // SRL (Shift Right)
             

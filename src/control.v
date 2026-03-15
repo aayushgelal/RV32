@@ -6,7 +6,8 @@ module control(
     output reg alu_src,
     output reg [2:0] alu_control,
     output reg mem_write,
-    output reg result_src
+    output reg result_src,
+    output reg branch
 );
 
     always @(*) begin
@@ -15,6 +16,7 @@ module control(
         alu_control = 3'b000;
         mem_write = 0;
         result_src = 0;
+        branch = 0;
 
         case (opcode)
             7'b0110011: begin
@@ -61,6 +63,20 @@ module control(
             end
             
             //store
+
+            // B-type (BEQ, BNE, BLT, BGE)
+            7'b1100011: begin
+                branch = 1;
+                reg_write = 0;
+                alu_src = 0;        // Compare two registers
+                mem_write = 0;
+                result_src = 0;
+                case (funct3)
+                    3'b000, 3'b001: alu_control = 3'b001; // BEQ/BNE: SUB
+                    3'b100, 3'b101: alu_control = 3'b101; // BLT/BGE: SLT
+                    default:        alu_control = 3'b001;
+                endcase
+            end
 
             7'b0100011: begin
                 reg_write = 0;      
