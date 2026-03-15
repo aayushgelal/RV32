@@ -1,33 +1,46 @@
-// === TEST 1: Independent instructions (no hazards) ===
-00500093  // 0x00: addi x1, x0, 5
-00A00113  // 0x04: addi x2, x0, 10
-00F00193  // 0x08: addi x3, x0, 15
-01400213  // 0x0C: addi x4, x0, 20
+// === TEST 1: EX/MEM forwarding (back-to-back dependency) ===
+00500093  // 0x00: addi x1, x0, 5       (x1 = 5)
+00108113  // 0x04: addi x2, x1, 1       (x2 = x1 + 1 = 6, forward from EX/MEM)
+00110193  // 0x08: addi x3, x2, 1       (x3 = x2 + 1 = 7, forward from EX/MEM)
 
-// === TEST 2: Dependent instruction with 3 NOPs ===
-// x5 depends on x1, which was written 7+ instructions ago — safe
-00108293  // 0x10: addi x5, x1, 1    (x5 = x1 + 1 = 6)
+// === TEST 2: MEM/WB forwarding (2-instruction gap) ===
+00A00213  // 0x0C: addi x4, x0, 10      (x4 = 10)
+00000013  // 0x10: nop                   (1 gap)
+00420293  // 0x14: addi x5, x4, 4       (x5 = x4 + 4 = 14, forward from MEM/WB)
 
-// === TEST 3: Store then Load (with NOPs for safety) ===
-// Store x1 (5) to mem[0]
-00102023  // 0x14: sw   x1, 0(x0)    (mem[0] = 5)
-00000013  // 0x18: nop
-00000013  // 0x1C: nop
+// === TEST 3: Load-use hazard (stall + forward) ===
+00102023  // 0x18: sw   x1, 0(x0)       (mem[0] = 5)
+00000013  // 0x1C: nop (let sw finish through pipeline)
 00000013  // 0x20: nop
-// Load from mem[0] into x6
-00002303  // 0x24: lw   x6, 0(x0)    (x6 = mem[0] = 5)
+00000013  // 0x24: nop
+00002303  // 0x28: lw   x6, 0(x0)       (x6 = mem[0] = 5)
+00130393  // 0x2C: addi x7, x6, 1       (x7 = x6 + 1 = 6, LOAD-USE: stall 1 + forward)
 
-// === TEST 4: LUI ===
-DEADB3B7  // 0x28: lui  x7, 0xDEADB  (x7 = 0xDEADB000)
-
-// === TEST 5: AUIPC ===
-00001417  // 0x2C: auipc x8, 1       (x8 = 0x2C + 0x1000 = 0x102C)
-
-// === TEST 6: JAL (jump forward over 2 instructions) ===
-00000013  // 0x30: nop (let previous writes finish)
+// === TEST 4: R-type forwarding chain ===
+00000013  // 0x30: nop
 00000013  // 0x34: nop
 00000013  // 0x38: nop
-00C004EF  // 0x3C: jal  x9, +12      (x9 = 0x40, jump to 0x48)
-00100513  // 0x40: addi x10, x0, 1   (SKIPPED by flush)
-00100513  // 0x44: addi x10, x0, 1   (SKIPPED by flush)
-00000513  // 0x48: addi x10, x0, 0   (x10 = 0, JAL lands here)
+002080B3  // 0x3C: add  x1, x1, x2      (x1 = 5+6 = 11, forward x1 and x2)
+00108133  // 0x40: add  x2, x1, x1      (x2 = 11+11 = 22, forward x1 from EX/MEM)
+
+// === TEST 5: Store with forwarded data ===
+00000013  // 0x44: nop
+00000013  // 0x48: nop
+00000013  // 0x4C: nop
+01400413  // 0x50: addi x8, x0, 20      (x8 = 20)
+00802023  // 0x54: sw   x8, 0(x0)       (mem[0] = 20, store forwarded x8)
+00000013  // 0x58: nop
+00000013  // 0x5C: nop
+00000013  // 0x60: nop
+00002483  // 0x64: lw   x9, 0(x0)       (x9 = mem[0] = 20)
+
+// === TEST 6: Branch with forwarding ===
+00000013  // 0x68: nop
+00000013  // 0x6C: nop
+00000013  // 0x70: nop
+00500513  // 0x74: addi x10, x0, 5      (x10 = 5)
+00500593  // 0x78: addi x11, x0, 5      (x11 = 5)
+00B50663  // 0x7C: beq  x10, x11, +12   (taken, forward x10 and x11, jump to 0x88)
+00100613  // 0x80: addi x12, x0, 1      (SKIPPED)
+00100613  // 0x84: addi x12, x0, 1      (SKIPPED)
+00000613  // 0x88: addi x12, x0, 0      (x12 = 0, branch landed here)

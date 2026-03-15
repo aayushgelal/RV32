@@ -23,7 +23,7 @@ module top(
     // ID/EX pipeline register
     reg [31:0] id_ex_pc, id_ex_pc_plus4;
     reg [31:0] id_ex_rd1, id_ex_rd2, id_ex_imm_ext;
-    reg [4:0]  id_ex_rd;
+    reg [4:0]  id_ex_rd, id_ex_rs1, id_ex_rs2;
     reg [2:0]  id_ex_funct3;
     reg        id_ex_reg_write, id_ex_alu_src, id_ex_mem_write;
     reg        id_ex_branch, id_ex_jump, id_ex_jalr;
@@ -36,6 +36,11 @@ module top(
     wire        ex_zero;
     reg [31:0]  ex_srcA;
     reg         ex_branch_taken;
+
+    // Forwarding
+    reg [1:0]  forward_a, forward_b;
+    reg [31:0] ex_rd1_fwd, ex_rd2_fwd;
+    wire [31:0] ex_mem_fwd_val;
 
     // EX/MEM pipeline register
     reg [31:0] ex_mem_alu_result, ex_mem_rd2, ex_mem_pc_plus4;
@@ -55,19 +60,32 @@ module top(
     // WB stage
     reg [31:0] wb_result;
 
-    // Flush signal (branch/jump resolved in EX)
+    // Hazard control
     wire flush;
+    wire stall;
+
     assign flush = ex_branch_taken || id_ex_jump || id_ex_jalr;
+
+    // =========================================================
+    //  HAZARD DETECTION (Load-Use Stall)
+    // =========================================================
+    // If instruction in EX is a load, and the instruction in ID
+    // needs that register, stall for 1 cycle.
+
+    assign stall = id_ex_result_src == 2'b01 &&       // load in EX
+                   id_ex_rd != 5'b0 &&                 // not writing x0
+                   (id_ex_rd == if_id_instr[19:15] ||  // rs1 match
+                    id_ex_rd == if_id_instr[24:20]);   // rs2 match
 
     // =========================================================
     //  STAGE 1: INSTRUCTION FETCH (IF)
     // =========================================================
 
-    pc pc_unit( .clk(clk), .rst(reset), .pc_next(pc_next), .pc(pc_out) );
+    pc pc_unit( .clk(clk), .rst(reset), .en(!stall), .pc_next(pc_next), .pc(pc_out) );
     pc_adder pc_adder_unit( .a(pc_out), .y(pc_plus4) );
     imem imem_unit( .a(pc_out), .rd(if_instr) );
 
-    // PC source mux — redirect from EX stage
+    // PC source mux
     assign pc_next = (id_ex_jalr)                   ? ex_jalr_target :
                      (id_ex_jump || ex_branch_taken) ? ex_branch_target :
                                                        pc_plus4;
@@ -75,17 +93,19 @@ module top(
     // =========================================================
     //  IF/ID PIPELINE REGISTER
     // =========================================================
+    // Stall: keep current values. Flush: insert NOP.
 
     always @(posedge clk) begin
         if (reset || flush) begin
             if_id_instr    <= 32'h00000013; // NOP
             if_id_pc       <= 32'b0;
             if_id_pc_plus4 <= 32'b0;
-        end else begin
+        end else if (!stall) begin
             if_id_instr    <= if_instr;
             if_id_pc       <= pc_out;
             if_id_pc_plus4 <= pc_plus4;
         end
+        // If stall: hold current values (don't update)
     end
 
     // =========================================================
@@ -123,18 +143,13 @@ module top(
     // =========================================================
     //  ID/EX PIPELINE REGISTER
     // =========================================================
+    // Stall: insert bubble (clear control signals).
+    // Flush: insert bubble.
 
     always @(posedge clk) begin
-        if (reset || flush) begin
-            id_ex_pc          <= 32'b0;
-            id_ex_pc_plus4    <= 32'b0;
-            id_ex_rd1         <= 32'b0;
-            id_ex_rd2         <= 32'b0;
-            id_ex_imm_ext     <= 32'b0;
-            id_ex_rd          <= 5'b0;
-            id_ex_funct3      <= 3'b0;
+        if (reset || flush || stall) begin
+            // Bubble: zero all control signals
             id_ex_reg_write   <= 0;
-            id_ex_alu_src     <= 0;
             id_ex_mem_write   <= 0;
             id_ex_branch      <= 0;
             id_ex_jump        <= 0;
@@ -142,6 +157,16 @@ module top(
             id_ex_result_src  <= 2'b0;
             id_ex_alu_src1    <= 2'b0;
             id_ex_alu_control <= 4'b0;
+            id_ex_alu_src     <= 0;
+            id_ex_rd          <= 5'b0;
+            id_ex_funct3      <= 3'b0;
+            id_ex_pc          <= 32'b0;
+            id_ex_pc_plus4    <= 32'b0;
+            id_ex_rd1         <= 32'b0;
+            id_ex_rd2         <= 32'b0;
+            id_ex_imm_ext     <= 32'b0;
+            id_ex_rs1         <= 5'b0;
+            id_ex_rs2         <= 5'b0;
         end else begin
             id_ex_pc          <= if_id_pc;
             id_ex_pc_plus4    <= if_id_pc_plus4;
@@ -149,6 +174,8 @@ module top(
             id_ex_rd2         <= id_rd2;
             id_ex_imm_ext     <= id_imm_ext;
             id_ex_rd          <= if_id_instr[11:7];
+            id_ex_rs1         <= if_id_instr[19:15];
+            id_ex_rs2         <= if_id_instr[24:20];
             id_ex_funct3      <= if_id_instr[14:12];
             id_ex_reg_write   <= id_reg_write;
             id_ex_alu_src     <= id_alu_src;
@@ -163,21 +190,65 @@ module top(
     end
 
     // =========================================================
+    //  FORWARDING UNIT
+    // =========================================================
+    // forward_a/forward_b: 00=no fwd, 10=from EX/MEM, 01=from MEM/WB
+
+    // Value to forward from EX/MEM (ALU result or PC+4 for JAL/JALR)
+    assign ex_mem_fwd_val = (ex_mem_result_src == 2'b10) ? ex_mem_pc_plus4
+                                                          : ex_mem_alu_result;
+
+    always @(*) begin
+        // --- Forward A (rs1) ---
+        if (ex_mem_reg_write && ex_mem_rd != 5'b0 && ex_mem_rd == id_ex_rs1)
+            forward_a = 2'b10;  // EX/MEM has priority (more recent)
+        else if (mem_wb_reg_write && mem_wb_rd != 5'b0 && mem_wb_rd == id_ex_rs1)
+            forward_a = 2'b01;  // MEM/WB
+        else
+            forward_a = 2'b00;  // No forwarding
+
+        // --- Forward B (rs2) ---
+        if (ex_mem_reg_write && ex_mem_rd != 5'b0 && ex_mem_rd == id_ex_rs2)
+            forward_b = 2'b10;
+        else if (mem_wb_reg_write && mem_wb_rd != 5'b0 && mem_wb_rd == id_ex_rs2)
+            forward_b = 2'b01;
+        else
+            forward_b = 2'b00;
+    end
+
+    // =========================================================
     //  STAGE 3: EXECUTE (EX)
     // =========================================================
 
-    // srcA mux (register / PC / zero)
+    // Apply forwarding to rd1 and rd2
     always @(*) begin
-        case (id_ex_alu_src1)
-            2'b00:   ex_srcA = id_ex_rd1;
-            2'b01:   ex_srcA = id_ex_pc;      // AUIPC
-            2'b10:   ex_srcA = 32'b0;          // LUI
-            default: ex_srcA = id_ex_rd1;
+        case (forward_a)
+            2'b10:   ex_rd1_fwd = ex_mem_fwd_val;
+            2'b01:   ex_rd1_fwd = wb_result;
+            default: ex_rd1_fwd = id_ex_rd1;
         endcase
     end
 
-    // srcB mux (register / immediate)
-    assign ex_srcB_mux = (id_ex_alu_src) ? id_ex_imm_ext : id_ex_rd2;
+    always @(*) begin
+        case (forward_b)
+            2'b10:   ex_rd2_fwd = ex_mem_fwd_val;
+            2'b01:   ex_rd2_fwd = wb_result;
+            default: ex_rd2_fwd = id_ex_rd2;
+        endcase
+    end
+
+    // srcA mux (forwarded register / PC / zero)
+    always @(*) begin
+        case (id_ex_alu_src1)
+            2'b00:   ex_srcA = ex_rd1_fwd;    // Normal (with forwarding)
+            2'b01:   ex_srcA = id_ex_pc;       // AUIPC
+            2'b10:   ex_srcA = 32'b0;          // LUI
+            default: ex_srcA = ex_rd1_fwd;
+        endcase
+    end
+
+    // srcB mux (forwarded register / immediate)
+    assign ex_srcB_mux = (id_ex_alu_src) ? id_ex_imm_ext : ex_rd2_fwd;
 
     alu alu_unit(
         .src1(ex_srcA),
@@ -222,7 +293,7 @@ module top(
             ex_mem_result_src <= 2'b0;
         end else begin
             ex_mem_alu_result <= ex_alu_result;
-            ex_mem_rd2        <= id_ex_rd2;
+            ex_mem_rd2        <= ex_rd2_fwd;  // Use forwarded value for stores
             ex_mem_pc_plus4   <= id_ex_pc_plus4;
             ex_mem_rd         <= id_ex_rd;
             ex_mem_reg_write  <= id_ex_reg_write;

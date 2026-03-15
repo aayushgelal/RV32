@@ -20,31 +20,30 @@ module top_tb;
         #10;
         reset = 0;
 
-        #500;
+        #600;
 
-        $display("=== Pipelined CPU Test ===");
+        $display("=== Pipeline Hazard Tests ===");
 
-        $display("--- Independent instructions ---");
-        $display("x1  = %0d (expect 5)",   uut.reg_unit.rf[1]);
-        $display("x2  = %0d (expect 10)",  uut.reg_unit.rf[2]);
-        $display("x3  = %0d (expect 15)",  uut.reg_unit.rf[3]);
-        $display("x4  = %0d (expect 20)",  uut.reg_unit.rf[4]);
+        $display("--- EX/MEM Forwarding (back-to-back) ---");
+        $display("x1  = %0d (expect 11, final after test4)", uut.reg_unit.rf[1]);
+        $display("x2  = %0d (expect 22, final after test4)", uut.reg_unit.rf[2]);
+        $display("x3  = %0d (expect 7,  chain fwd)",         uut.reg_unit.rf[3]);
 
-        $display("--- Dependent (x5 = x1 + 1) ---");
-        $display("x5  = %0d (expect 6)",   uut.reg_unit.rf[5]);
+        $display("--- MEM/WB Forwarding (2-gap) ---");
+        $display("x5  = %0d (expect 14, x4+4)",              uut.reg_unit.rf[5]);
 
-        $display("--- Store/Load ---");
-        $display("x6  = %0d (expect 5)",   uut.reg_unit.rf[6]);
+        $display("--- Load-Use Hazard (stall + forward) ---");
+        $display("x6  = %0d (expect 5,  loaded)",             uut.reg_unit.rf[6]);
+        $display("x7  = %0d (expect 6,  load-use fwd)",       uut.reg_unit.rf[7]);
 
-        $display("--- LUI ---");
-        $display("x7  = %0h (expect deadb000)", uut.reg_unit.rf[7]);
+        $display("--- Store Forwarding ---");
+        $display("x8  = %0d (expect 20)",                     uut.reg_unit.rf[8]);
+        $display("x9  = %0d (expect 20, store-then-load)",    uut.reg_unit.rf[9]);
 
-        $display("--- AUIPC ---");
-        $display("x8  = %0h (expect 102c)",     uut.reg_unit.rf[8]);
-
-        $display("--- JAL ---");
-        $display("x9  = %0h (expect 40, return addr)", uut.reg_unit.rf[9]);
-        $display("x10 = %0d (expect 0, skipped)",      uut.reg_unit.rf[10]);
+        $display("--- Branch with Forwarding ---");
+        $display("x10 = %0d (expect 5)",                      uut.reg_unit.rf[10]);
+        $display("x11 = %0d (expect 5)",                      uut.reg_unit.rf[11]);
+        $display("x12 = %0d (expect 0,  branch taken)",       uut.reg_unit.rf[12]);
 
         $finish;
     end
