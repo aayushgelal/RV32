@@ -1,43 +1,23 @@
 00500093  // 0x00: addi x1, x0, 5     (x1 = 5)
-00500113  // 0x04: addi x2, x0, 5     (x2 = 5)
-00A00193  // 0x08: addi x3, x0, 10    (x3 = 10)
+00A00113  // 0x04: addi x2, x0, 10    (x2 = 10)
 
-// --- TEST 1: BEQ taken (x1 == x2) ---
-00208663  // 0x0C: beq  x1, x2, +12   (should jump to 0x18)
-00100213  // 0x10: addi x4, x0, 1     (SKIPPED)
-00100213  // 0x14: addi x4, x0, 1     (SKIPPED)
-00000213  // 0x18: addi x4, x0, 0     (x4 = 0, lands here)
+// --- TEST 1: JAL - jump forward, save return address ---
+00C004EF  // 0x08: jal  x9, +12       (x9 = PC+4 = 0x0C, jump to 0x14)
+00100193  // 0x0C: addi x3, x0, 1     (SKIPPED)
+00100193  // 0x10: addi x3, x0, 1     (SKIPPED)
+00000193  // 0x14: addi x3, x0, 0     (x3 = 0, JAL lands here)
 
-// --- TEST 2: BEQ not taken (x1 != x3) ---
-00308463  // 0x1C: beq  x1, x3, +8    (should NOT jump, x1 != x3)
-06300293  // 0x20: addi x5, x0, 99    (x5 = 99, should execute)
+// --- TEST 2: JALR - jump to register+offset, save return address ---
+01400213  // 0x18: addi x4, x0, 20    (x4 = 20 = 0x14... need 0x28)
+02800213  // 0x1C: addi x4, x0, 40    (x4 = 0x28)
+000202E7  // 0x20: jalr x5, x4, 0     (x5 = PC+4 = 0x24, jump to x4+0 = 0x28)
+00100313  // 0x24: addi x6, x0, 1     (SKIPPED)
+00000313  // 0x28: addi x6, x0, 0     (x6 = 0, JALR lands here)
 
-// --- TEST 3: BNE taken (x1 != x3) ---
-00309663  // 0x24: bne  x1, x3, +12   (should jump to 0x30)
-00100313  // 0x28: addi x6, x0, 1     (SKIPPED)
-00100313  // 0x2C: addi x6, x0, 1     (SKIPPED)
-00000313  // 0x30: addi x6, x0, 0     (x6 = 0, lands here)
-
-// --- TEST 4: BNE not taken (x1 == x2) ---
-00209463  // 0x34: bne  x1, x2, +8    (should NOT jump, x1 == x2)
-06300393  // 0x38: addi x7, x0, 99    (x7 = 99, should execute)
-
-// --- TEST 5: BLT taken (x1 < x3, 5 < 10) ---
-0030C663  // 0x3C: blt  x1, x3, +12   (should jump to 0x48)
-00100E13  // 0x40: addi x28, x0, 1    (SKIPPED)
-00100E13  // 0x44: addi x28, x0, 1    (SKIPPED)
-00000E13  // 0x48: addi x28, x0, 0    (x28 = 0, lands here)
-
-// --- TEST 6: BLT not taken (x3 >= x1, 10 >= 5) ---
-0010CE63  // 0x4C: blt  x1, x1, +28   (should NOT jump, x1 == x1)
-06300E93  // 0x50: addi x29, x0, 99   (x29 = 99, should execute)
-
-// --- TEST 7: BGE taken (x1 >= x1) ---
-0010D663  // 0x54: bge  x1, x1, +12   (should jump to 0x60)
-00100F13  // 0x58: addi x30, x0, 1    (SKIPPED)
-00100F13  // 0x5C: addi x30, x0, 1    (SKIPPED)
-00000F13  // 0x60: addi x30, x0, 0    (x30 = 0, lands here)
-
-// --- TEST 8: BGE not taken (x1 < x3, 5 < 10) ---
-0030D463  // 0x64: bge  x1, x3, +8    (should NOT jump, 5 < 10)
-06300F93  // 0x68: addi x31, x0, 99   (x31 = 99, should execute)
+// --- TEST 3: Function call pattern (JAL to "function", JALR back) ---
+010000EF  // 0x2C: jal  x1, +16       (x1 = 0x30, jump to 0x3C = "function")
+06300393  // 0x30: addi x7, x0, 99    (x7 = 99, returned here from function)
+00000013  // 0x34: addi x0, x0, 0     (NOP - end)
+00000013  // 0x38: addi x0, x0, 0     (NOP - end)
+01400413  // 0x3C: addi x8, x0, 20    (x8 = 20, "function body")
+00008067  // 0x40: jalr x0, x1, 0     (jump back to x1 = 0x30, discard return addr)

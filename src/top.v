@@ -5,39 +5,55 @@ module top(
     // --- WIRES ---
     wire [31:0] pc_out, pc_plus4, pc_next, instr;
     wire [31:0] imm_ext, alu_result, read_data;
-    wire [31:0] srcA, srcB_reg, srcB_mux, result_mux;
+    wire [31:0] srcA, srcB_reg, srcB_mux;
     wire [31:0] branch_target;
     wire zero;
 
-    wire reg_write_wire, alu_src_wire, mem_write_wire, result_src_wire, branch_wire;
+    wire reg_write_wire, alu_src_wire, mem_write_wire, branch_wire, jump_wire, jalr_wire;
+    wire [1:0] result_src_wire;
     wire [2:0] alu_ctrl_wire;
 
     // --- MUX 1: ALU Source (Immediate vs Register) ---
     assign srcB_mux = (alu_src_wire) ? imm_ext : srcB_reg;
 
-    // --- MUX 2: Result Source (Memory vs ALU) ---
-    assign result_mux = (result_src_wire) ? read_data : alu_result;
+    // --- MUX 2: Result Source (ALU / Memory / PC+4) ---
+    reg [31:0] result_mux;
+    always @(*) begin
+        case (result_src_wire)
+            2'b00: result_mux = alu_result;  // R-type, I-type
+            2'b01: result_mux = read_data;   // Load
+            2'b10: result_mux = pc_plus4;    // JAL, JALR (save return address)
+            default: result_mux = alu_result;
+        endcase
+    end
 
-    // --- BRANCH LOGIC ---
+    // --- BRANCH / JUMP LOGIC ---
     assign branch_target = pc_out + imm_ext;
+    wire [31:0] jalr_target;
+    assign jalr_target = alu_result & 32'hFFFFFFFE; // (rs1 + imm) with bit 0 cleared
 
     // Branch condition based on funct3
-    reg pc_src;
+    reg branch_taken;
     always @(*) begin
-        pc_src = 0;
+        branch_taken = 0;
         if (branch_wire) begin
             case (instr[14:12])
-                3'b000: pc_src = zero;             // BEQ: taken if equal
-                3'b001: pc_src = ~zero;            // BNE: taken if not equal
-                3'b100: pc_src = alu_result[0];    // BLT: taken if src1 < src2
-                3'b101: pc_src = ~alu_result[0];   // BGE: taken if src1 >= src2
-                default: pc_src = 0;
+                3'b000: branch_taken = zero;             // BEQ
+                3'b001: branch_taken = ~zero;            // BNE
+                3'b100: branch_taken = alu_result[0];    // BLT
+                3'b101: branch_taken = ~alu_result[0];   // BGE
+                default: branch_taken = 0;
             endcase
         end
     end
 
-    // --- MUX 3: PC Source (PC+4 vs Branch Target) ---
-    assign pc_next = (pc_src) ? branch_target : pc_plus4;
+    // --- MUX 3: PC Source ---
+    // JALR: target from ALU (rs1 + imm)
+    // JAL or branch taken: PC-relative target
+    // Otherwise: PC + 4
+    assign pc_next = (jalr_wire)                  ? jalr_target :
+                     (jump_wire || branch_taken)   ? branch_target :
+                                                     pc_plus4;
 
     // --- MODULES ---
     pc pc_unit( .clk(clk), .rst(reset), .pc_next(pc_next), .pc(pc_out) );
@@ -51,7 +67,9 @@ module top(
         .alu_control(alu_ctrl_wire),
         .mem_write(mem_write_wire),
         .result_src(result_src_wire),
-        .branch(branch_wire)
+        .branch(branch_wire),
+        .jump(jump_wire),
+        .jalr(jalr_wire)
     );
 
     regfile reg_unit(
