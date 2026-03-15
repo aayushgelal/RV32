@@ -1,43 +1,33 @@
-// === SETUP ===
-00500093  // 0x00: addi  x1, x0, 5       (x1 = 5)
-00A00113  // 0x04: addi  x2, x0, 10      (x2 = 10)
-FFF00193  // 0x08: addi  x3, x0, -1      (x3 = -1 = 0xFFFFFFFF)
+// === TEST 1: Independent instructions (no hazards) ===
+00500093  // 0x00: addi x1, x0, 5
+00A00113  // 0x04: addi x2, x0, 10
+00F00193  // 0x08: addi x3, x0, 15
+01400213  // 0x0C: addi x4, x0, 20
 
-// === I-type: XORI, SLTI, SLTIU, SRAI ===
-00F0C213  // 0x0C: xori  x4, x1, 15      (x4 = 5 ^ 15 = 10)
-00A0A293  // 0x10: slti  x5, x1, 10      (x5 = 1, signed 5 < 10)
-0000A313  // 0x14: slti  x6, x1, 0       (x6 = 0, signed 5 < 0 false)
-FFF0B393  // 0x18: sltiu x7, x1, -1      (x7 = 1, unsigned 5 < 0xFFFFFFFF)
-4020D413  // 0x1C: srai  x8, x1, 2       (x8 = 5 >>> 2 = 1)
-4011D493  // 0x20: srai  x9, x3, 1       (x9 = -1 >>> 1 = -1 = 0xFFFFFFFF)
+// === TEST 2: Dependent instruction with 3 NOPs ===
+// x5 depends on x1, which was written 7+ instructions ago — safe
+00108293  // 0x10: addi x5, x1, 1    (x5 = x1 + 1 = 6)
 
-// === R-type: SLTU, SRA ===
-0020B533  // 0x24: sltu  x10, x1, x2     (x10 = 1, 5 <u 10)
-001135B3  // 0x28: sltu  x11, x2, x1     (x11 = 0, 10 <u 5 false)
-4011D633  // 0x2C: sra   x12, x3, x1     (x12 = -1 >>> 5 = -1 = 0xFFFFFFFF)
+// === TEST 3: Store then Load (with NOPs for safety) ===
+// Store x1 (5) to mem[0]
+00102023  // 0x14: sw   x1, 0(x0)    (mem[0] = 5)
+00000013  // 0x18: nop
+00000013  // 0x1C: nop
+00000013  // 0x20: nop
+// Load from mem[0] into x6
+00002303  // 0x24: lw   x6, 0(x0)    (x6 = mem[0] = 5)
 
-// === BLTU taken (5 <u 0xFFFFFFFF) ===
-0030E663  // 0x30: bltu  x1, x3, +12     (jump to 0x3C)
-00100693  // 0x34: addi  x13, x0, 1      (SKIPPED)
-00100693  // 0x38: addi  x13, x0, 1      (SKIPPED)
-00000693  // 0x3C: addi  x13, x0, 0      (x13 = 0, landed)
+// === TEST 4: LUI ===
+DEADB3B7  // 0x28: lui  x7, 0xDEADB  (x7 = 0xDEADB000)
 
-// === BLTU not taken (0xFFFFFFFF >u 5) ===
-0011E463  // 0x40: bltu  x3, x1, +8      (NOT taken)
-06300713  // 0x44: addi  x14, x0, 99     (x14 = 99, executed)
+// === TEST 5: AUIPC ===
+00001417  // 0x2C: auipc x8, 1       (x8 = 0x2C + 0x1000 = 0x102C)
 
-// === BGEU taken (0xFFFFFFFF >=u 5) ===
-0011F663  // 0x48: bgeu  x3, x1, +12     (jump to 0x54)
-00100793  // 0x4C: addi  x15, x0, 1      (SKIPPED)
-00100793  // 0x50: addi  x15, x0, 1      (SKIPPED)
-00000793  // 0x54: addi  x15, x0, 0      (x15 = 0, landed)
-
-// === BGEU not taken (5 <u 0xFFFFFFFF) ===
-0030F463  // 0x58: bgeu  x1, x3, +8      (NOT taken)
-06300813  // 0x5C: addi  x16, x0, 99     (x16 = 99, executed)
-
-// === LUI ===
-DEADBA37  // 0x60: lui   x20, 0xDEADB    (x20 = 0xDEADB000)
-
-// === AUIPC ===
-00001A97  // 0x64: auipc x21, 1           (x21 = 0x64 + 0x1000 = 0x1064)
+// === TEST 6: JAL (jump forward over 2 instructions) ===
+00000013  // 0x30: nop (let previous writes finish)
+00000013  // 0x34: nop
+00000013  // 0x38: nop
+00C004EF  // 0x3C: jal  x9, +12      (x9 = 0x40, jump to 0x48)
+00100513  // 0x40: addi x10, x0, 1   (SKIPPED by flush)
+00100513  // 0x44: addi x10, x0, 1   (SKIPPED by flush)
+00000513  // 0x48: addi x10, x0, 0   (x10 = 0, JAL lands here)

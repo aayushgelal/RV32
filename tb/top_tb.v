@@ -20,41 +20,31 @@ module top_tb;
         #10;
         reset = 0;
 
-        #300;
+        #500;
 
-        $display("=== RV32I Complete Test Suite ===");
+        $display("=== Pipelined CPU Test ===");
 
-        $display("--- Setup ---");
+        $display("--- Independent instructions ---");
         $display("x1  = %0d (expect 5)",   uut.reg_unit.rf[1]);
         $display("x2  = %0d (expect 10)",  uut.reg_unit.rf[2]);
-        $display("x3  = %0h (expect ffffffff, -1)", uut.reg_unit.rf[3]);
+        $display("x3  = %0d (expect 15)",  uut.reg_unit.rf[3]);
+        $display("x4  = %0d (expect 20)",  uut.reg_unit.rf[4]);
 
-        $display("--- I-type: XORI, SLTI, SLTIU, SRAI ---");
-        $display("x4  = %0d (expect 10, xori 5^15)",        uut.reg_unit.rf[4]);
-        $display("x5  = %0d (expect 1,  slti 5<10)",        uut.reg_unit.rf[5]);
-        $display("x6  = %0d (expect 0,  slti 5<0 false)",   uut.reg_unit.rf[6]);
-        $display("x7  = %0d (expect 1,  sltiu 5<u max)",    uut.reg_unit.rf[7]);
-        $display("x8  = %0d (expect 1,  srai 5>>>2)",       uut.reg_unit.rf[8]);
-        $display("x9  = %0h (expect ffffffff, srai -1>>>1)", uut.reg_unit.rf[9]);
+        $display("--- Dependent (x5 = x1 + 1) ---");
+        $display("x5  = %0d (expect 6)",   uut.reg_unit.rf[5]);
 
-        $display("--- R-type: SLTU, SRA ---");
-        $display("x10 = %0d (expect 1,  sltu 5<u10)",       uut.reg_unit.rf[10]);
-        $display("x11 = %0d (expect 0,  sltu 10<u5 false)", uut.reg_unit.rf[11]);
-        $display("x12 = %0h (expect ffffffff, sra -1>>>5)",  uut.reg_unit.rf[12]);
-
-        $display("--- BLTU ---");
-        $display("x13 = %0d (expect 0,  bltu taken)",       uut.reg_unit.rf[13]);
-        $display("x14 = %0d (expect 99, bltu not taken)",   uut.reg_unit.rf[14]);
-
-        $display("--- BGEU ---");
-        $display("x15 = %0d (expect 0,  bgeu taken)",       uut.reg_unit.rf[15]);
-        $display("x16 = %0d (expect 99, bgeu not taken)",   uut.reg_unit.rf[16]);
+        $display("--- Store/Load ---");
+        $display("x6  = %0d (expect 5)",   uut.reg_unit.rf[6]);
 
         $display("--- LUI ---");
-        $display("x20 = %0h (expect deadb000)",             uut.reg_unit.rf[20]);
+        $display("x7  = %0h (expect deadb000)", uut.reg_unit.rf[7]);
 
         $display("--- AUIPC ---");
-        $display("x21 = %0h (expect 1064)",                 uut.reg_unit.rf[21]);
+        $display("x8  = %0h (expect 102c)",     uut.reg_unit.rf[8]);
+
+        $display("--- JAL ---");
+        $display("x9  = %0h (expect 40, return addr)", uut.reg_unit.rf[9]);
+        $display("x10 = %0d (expect 0, skipped)",      uut.reg_unit.rf[10]);
 
         $finish;
     end

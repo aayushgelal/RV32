@@ -2,108 +2,280 @@ module top(
     input clk,
     input reset
 );
-    // --- WIRES ---
-    wire [31:0] pc_out, pc_plus4, pc_next, instr;
-    wire [31:0] imm_ext, alu_result, read_data;
-    wire [31:0] srcA_reg, srcB_reg, srcB_mux;
-    wire [31:0] branch_target;
-    wire zero;
 
-    wire reg_write_wire, alu_src_wire, mem_write_wire, branch_wire, jump_wire, jalr_wire;
-    wire [1:0] result_src_wire, alu_src1_wire;
-    wire [3:0] alu_ctrl_wire;
+    // =========================================================
+    //  ALL SIGNAL DECLARATIONS
+    // =========================================================
 
-    // --- MUX 0: ALU Source 1 (Register / PC / Zero) ---
-    reg [31:0] srcA;
+    // IF stage
+    wire [31:0] pc_out, pc_plus4, pc_next, if_instr;
+
+    // IF/ID pipeline register
+    reg [31:0] if_id_instr, if_id_pc, if_id_pc_plus4;
+
+    // ID stage
+    wire [31:0] id_rd1, id_rd2, id_imm_ext;
+    wire        id_reg_write, id_alu_src, id_mem_write;
+    wire        id_branch, id_jump, id_jalr;
+    wire [1:0]  id_result_src, id_alu_src1;
+    wire [3:0]  id_alu_control;
+
+    // ID/EX pipeline register
+    reg [31:0] id_ex_pc, id_ex_pc_plus4;
+    reg [31:0] id_ex_rd1, id_ex_rd2, id_ex_imm_ext;
+    reg [4:0]  id_ex_rd;
+    reg [2:0]  id_ex_funct3;
+    reg        id_ex_reg_write, id_ex_alu_src, id_ex_mem_write;
+    reg        id_ex_branch, id_ex_jump, id_ex_jalr;
+    reg [1:0]  id_ex_result_src, id_ex_alu_src1;
+    reg [3:0]  id_ex_alu_control;
+
+    // EX stage
+    wire [31:0] ex_alu_result, ex_srcB_mux;
+    wire [31:0] ex_branch_target, ex_jalr_target;
+    wire        ex_zero;
+    reg [31:0]  ex_srcA;
+    reg         ex_branch_taken;
+
+    // EX/MEM pipeline register
+    reg [31:0] ex_mem_alu_result, ex_mem_rd2, ex_mem_pc_plus4;
+    reg [4:0]  ex_mem_rd;
+    reg        ex_mem_reg_write, ex_mem_mem_write;
+    reg [1:0]  ex_mem_result_src;
+
+    // MEM stage
+    wire [31:0] mem_read_data;
+
+    // MEM/WB pipeline register
+    reg [31:0] mem_wb_alu_result, mem_wb_read_data, mem_wb_pc_plus4;
+    reg [4:0]  mem_wb_rd;
+    reg        mem_wb_reg_write;
+    reg [1:0]  mem_wb_result_src;
+
+    // WB stage
+    reg [31:0] wb_result;
+
+    // Flush signal (branch/jump resolved in EX)
+    wire flush;
+    assign flush = ex_branch_taken || id_ex_jump || id_ex_jalr;
+
+    // =========================================================
+    //  STAGE 1: INSTRUCTION FETCH (IF)
+    // =========================================================
+
+    pc pc_unit( .clk(clk), .rst(reset), .pc_next(pc_next), .pc(pc_out) );
+    pc_adder pc_adder_unit( .a(pc_out), .y(pc_plus4) );
+    imem imem_unit( .a(pc_out), .rd(if_instr) );
+
+    // PC source mux — redirect from EX stage
+    assign pc_next = (id_ex_jalr)                   ? ex_jalr_target :
+                     (id_ex_jump || ex_branch_taken) ? ex_branch_target :
+                                                       pc_plus4;
+
+    // =========================================================
+    //  IF/ID PIPELINE REGISTER
+    // =========================================================
+
+    always @(posedge clk) begin
+        if (reset || flush) begin
+            if_id_instr    <= 32'h00000013; // NOP
+            if_id_pc       <= 32'b0;
+            if_id_pc_plus4 <= 32'b0;
+        end else begin
+            if_id_instr    <= if_instr;
+            if_id_pc       <= pc_out;
+            if_id_pc_plus4 <= pc_plus4;
+        end
+    end
+
+    // =========================================================
+    //  STAGE 2: INSTRUCTION DECODE (ID)
+    // =========================================================
+
+    control control_unit(
+        .opcode(if_id_instr[6:0]),
+        .funct3(if_id_instr[14:12]),
+        .funct7(if_id_instr[31:25]),
+        .reg_write(id_reg_write),
+        .alu_src(id_alu_src),
+        .alu_control(id_alu_control),
+        .mem_write(id_mem_write),
+        .result_src(id_result_src),
+        .branch(id_branch),
+        .jump(id_jump),
+        .jalr(id_jalr),
+        .alu_src1(id_alu_src1)
+    );
+
+    regfile reg_unit(
+        .clk(clk),
+        .we3(mem_wb_reg_write),
+        .a1(if_id_instr[19:15]),
+        .a2(if_id_instr[24:20]),
+        .a3(mem_wb_rd),
+        .rd1(id_rd1),
+        .rd2(id_rd2),
+        .wd3(wb_result)
+    );
+
+    imm_gen gen_unit( .instr(if_id_instr), .imm_ext(id_imm_ext) );
+
+    // =========================================================
+    //  ID/EX PIPELINE REGISTER
+    // =========================================================
+
+    always @(posedge clk) begin
+        if (reset || flush) begin
+            id_ex_pc          <= 32'b0;
+            id_ex_pc_plus4    <= 32'b0;
+            id_ex_rd1         <= 32'b0;
+            id_ex_rd2         <= 32'b0;
+            id_ex_imm_ext     <= 32'b0;
+            id_ex_rd          <= 5'b0;
+            id_ex_funct3      <= 3'b0;
+            id_ex_reg_write   <= 0;
+            id_ex_alu_src     <= 0;
+            id_ex_mem_write   <= 0;
+            id_ex_branch      <= 0;
+            id_ex_jump        <= 0;
+            id_ex_jalr        <= 0;
+            id_ex_result_src  <= 2'b0;
+            id_ex_alu_src1    <= 2'b0;
+            id_ex_alu_control <= 4'b0;
+        end else begin
+            id_ex_pc          <= if_id_pc;
+            id_ex_pc_plus4    <= if_id_pc_plus4;
+            id_ex_rd1         <= id_rd1;
+            id_ex_rd2         <= id_rd2;
+            id_ex_imm_ext     <= id_imm_ext;
+            id_ex_rd          <= if_id_instr[11:7];
+            id_ex_funct3      <= if_id_instr[14:12];
+            id_ex_reg_write   <= id_reg_write;
+            id_ex_alu_src     <= id_alu_src;
+            id_ex_mem_write   <= id_mem_write;
+            id_ex_branch      <= id_branch;
+            id_ex_jump        <= id_jump;
+            id_ex_jalr        <= id_jalr;
+            id_ex_result_src  <= id_result_src;
+            id_ex_alu_src1    <= id_alu_src1;
+            id_ex_alu_control <= id_alu_control;
+        end
+    end
+
+    // =========================================================
+    //  STAGE 3: EXECUTE (EX)
+    // =========================================================
+
+    // srcA mux (register / PC / zero)
     always @(*) begin
-        case (alu_src1_wire)
-            2'b00: srcA = srcA_reg;   // Normal: from register file
-            2'b01: srcA = pc_out;     // AUIPC: PC
-            2'b10: srcA = 32'b0;      // LUI: zero
-            default: srcA = srcA_reg;
+        case (id_ex_alu_src1)
+            2'b00:   ex_srcA = id_ex_rd1;
+            2'b01:   ex_srcA = id_ex_pc;      // AUIPC
+            2'b10:   ex_srcA = 32'b0;          // LUI
+            default: ex_srcA = id_ex_rd1;
         endcase
     end
 
-    // --- MUX 1: ALU Source 2 (Immediate vs Register) ---
-    assign srcB_mux = (alu_src_wire) ? imm_ext : srcB_reg;
+    // srcB mux (register / immediate)
+    assign ex_srcB_mux = (id_ex_alu_src) ? id_ex_imm_ext : id_ex_rd2;
 
-    // --- MUX 2: Result Source (ALU / Memory / PC+4) ---
-    reg [31:0] result_mux;
+    alu alu_unit(
+        .src1(ex_srcA),
+        .src2(ex_srcB_mux),
+        .alu_control(id_ex_alu_control),
+        .result(ex_alu_result),
+        .zero(ex_zero)
+    );
+
+    // Branch/jump targets
+    assign ex_branch_target = id_ex_pc + id_ex_imm_ext;
+    assign ex_jalr_target   = ex_alu_result & 32'hFFFFFFFE;
+
+    // Branch condition
     always @(*) begin
-        case (result_src_wire)
-            2'b00: result_mux = alu_result;  // R-type, I-type, LUI, AUIPC
-            2'b01: result_mux = read_data;   // Load
-            2'b10: result_mux = pc_plus4;    // JAL, JALR
-            default: result_mux = alu_result;
-        endcase
-    end
-
-    // --- BRANCH / JUMP LOGIC ---
-    assign branch_target = pc_out + imm_ext;
-    wire [31:0] jalr_target;
-    assign jalr_target = alu_result & 32'hFFFFFFFE;
-
-    // Branch condition based on funct3
-    reg branch_taken;
-    always @(*) begin
-        branch_taken = 0;
-        if (branch_wire) begin
-            case (instr[14:12])
-                3'b000: branch_taken = zero;             // BEQ
-                3'b001: branch_taken = ~zero;            // BNE
-                3'b100: branch_taken = alu_result[0];    // BLT
-                3'b101: branch_taken = ~alu_result[0];   // BGE
-                3'b110: branch_taken = alu_result[0];    // BLTU (same logic, SLTU in ALU)
-                3'b111: branch_taken = ~alu_result[0];   // BGEU
-                default: branch_taken = 0;
+        ex_branch_taken = 0;
+        if (id_ex_branch) begin
+            case (id_ex_funct3)
+                3'b000: ex_branch_taken = ex_zero;
+                3'b001: ex_branch_taken = ~ex_zero;
+                3'b100: ex_branch_taken = ex_alu_result[0];
+                3'b101: ex_branch_taken = ~ex_alu_result[0];
+                3'b110: ex_branch_taken = ex_alu_result[0];
+                3'b111: ex_branch_taken = ~ex_alu_result[0];
+                default: ex_branch_taken = 0;
             endcase
         end
     end
 
-    // --- MUX 3: PC Source ---
-    assign pc_next = (jalr_wire)                  ? jalr_target :
-                     (jump_wire || branch_taken)   ? branch_target :
-                                                     pc_plus4;
+    // =========================================================
+    //  EX/MEM PIPELINE REGISTER
+    // =========================================================
 
-    // --- MODULES ---
-    pc pc_unit( .clk(clk), .rst(reset), .pc_next(pc_next), .pc(pc_out) );
-    pc_adder pc_adder_unit( .a(pc_out), .y(pc_plus4) );
-    imem imem_unit( .a(pc_out), .rd(instr) );
+    always @(posedge clk) begin
+        if (reset) begin
+            ex_mem_alu_result <= 32'b0;
+            ex_mem_rd2        <= 32'b0;
+            ex_mem_pc_plus4   <= 32'b0;
+            ex_mem_rd         <= 5'b0;
+            ex_mem_reg_write  <= 0;
+            ex_mem_mem_write  <= 0;
+            ex_mem_result_src <= 2'b0;
+        end else begin
+            ex_mem_alu_result <= ex_alu_result;
+            ex_mem_rd2        <= id_ex_rd2;
+            ex_mem_pc_plus4   <= id_ex_pc_plus4;
+            ex_mem_rd         <= id_ex_rd;
+            ex_mem_reg_write  <= id_ex_reg_write;
+            ex_mem_mem_write  <= id_ex_mem_write;
+            ex_mem_result_src <= id_ex_result_src;
+        end
+    end
 
-    control control_unit(
-        .opcode(instr[6:0]), .funct3(instr[14:12]), .funct7(instr[31:25]),
-        .reg_write(reg_write_wire),
-        .alu_src(alu_src_wire),
-        .alu_control(alu_ctrl_wire),
-        .mem_write(mem_write_wire),
-        .result_src(result_src_wire),
-        .branch(branch_wire),
-        .jump(jump_wire),
-        .jalr(jalr_wire),
-        .alu_src1(alu_src1_wire)
-    );
+    // =========================================================
+    //  STAGE 4: MEMORY (MEM)
+    // =========================================================
 
-    regfile reg_unit(
-        .clk(clk), .we3(reg_write_wire),
-        .a1(instr[19:15]), .a2(instr[24:20]), .a3(instr[11:7]),
-        .rd1(srcA_reg), .rd2(srcB_reg),
-        .wd3(result_mux)
-    );
-
-    imm_gen gen_unit( .instr(instr), .imm_ext(imm_ext) );
-
-    alu alu_unit(
-        .src1(srcA), .src2(srcB_mux), .alu_control(alu_ctrl_wire),
-        .result(alu_result), .zero(zero)
-    );
-
-    // --- DATA MEMORY ---
     dmem dmem_unit(
         .clk(clk),
-        .we(mem_write_wire),
-        .a(alu_result),
-        .wd(srcB_reg),
-        .rd(read_data)
+        .we(ex_mem_mem_write),
+        .a(ex_mem_alu_result),
+        .wd(ex_mem_rd2),
+        .rd(mem_read_data)
     );
+
+    // =========================================================
+    //  MEM/WB PIPELINE REGISTER
+    // =========================================================
+
+    always @(posedge clk) begin
+        if (reset) begin
+            mem_wb_alu_result <= 32'b0;
+            mem_wb_read_data  <= 32'b0;
+            mem_wb_pc_plus4   <= 32'b0;
+            mem_wb_rd         <= 5'b0;
+            mem_wb_reg_write  <= 0;
+            mem_wb_result_src <= 2'b0;
+        end else begin
+            mem_wb_alu_result <= ex_mem_alu_result;
+            mem_wb_read_data  <= mem_read_data;
+            mem_wb_pc_plus4   <= ex_mem_pc_plus4;
+            mem_wb_rd         <= ex_mem_rd;
+            mem_wb_reg_write  <= ex_mem_reg_write;
+            mem_wb_result_src <= ex_mem_result_src;
+        end
+    end
+
+    // =========================================================
+    //  STAGE 5: WRITE BACK (WB)
+    // =========================================================
+
+    always @(*) begin
+        case (mem_wb_result_src)
+            2'b00:   wb_result = mem_wb_alu_result;
+            2'b01:   wb_result = mem_wb_read_data;
+            2'b10:   wb_result = mem_wb_pc_plus4;
+            default: wb_result = mem_wb_alu_result;
+        endcase
+    end
 
 endmodule
