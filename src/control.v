@@ -4,13 +4,17 @@ module control(
     input [6:0] funct7,    
     output reg reg_write,
     output reg alu_src,
-    output reg [2:0] alu_control
+    output reg [2:0] alu_control,
+    output reg mem_write,
+    output reg result_src
 );
 
     always @(*) begin
         reg_write = 0;
         alu_src = 0;
         alu_control = 3'b000;
+        mem_write = 0;
+        result_src = 0;
 
         case (opcode)
             7'b0110011: begin
