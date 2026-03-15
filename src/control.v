@@ -1,109 +1,131 @@
 module control(
     input [6:0] opcode,
-    input [2:0] funct3,     
-    input [6:0] funct7,    
+    input [2:0] funct3,
+    input [6:0] funct7,
     output reg reg_write,
     output reg alu_src,
-    output reg [2:0] alu_control,
+    output reg [3:0] alu_control,
     output reg mem_write,
     output reg [1:0] result_src,
     output reg branch,
     output reg jump,
-    output reg jalr
+    output reg jalr,
+    output reg [1:0] alu_src1  // 00=regfile, 01=PC, 10=zero
 );
 
     always @(*) begin
         reg_write = 0;
         alu_src = 0;
-        alu_control = 3'b000;
+        alu_control = 4'b0000;
         mem_write = 0;
         result_src = 2'b00;
         branch = 0;
         jump = 0;
         jalr = 0;
+        alu_src1 = 2'b00;
 
         case (opcode)
+            // R-type
             7'b0110011: begin
                 reg_write = 1;
-                alu_src = 0; 
+                alu_src = 0;
 
                 case (funct3)
-                    3'b000: begin 
-                        if (funct7[5]) alu_control = 3'b001; // SUB
-                        else           alu_control = 3'b000; // ADD
+                    3'b000: begin
+                        if (funct7[5]) alu_control = 4'b0001; // SUB
+                        else           alu_control = 4'b0000; // ADD
                     end
-                    
-                    3'b001: alu_control = 3'b100; // SLL (Shift Left) - Corresponds to 0x1
-                    3'b010: alu_control = 3'b101; // SLT (Set Less Than) - Corresponds to 0x2
-                    3'b100: alu_control = 3'b110; // XOR
-                    3'b101: alu_control = 3'b111; // SRL (Shift Right) - Corresponds to 0x5
-                    3'b110: alu_control = 3'b011; // OR 
-                    3'b111: alu_control = 3'b010; // AND
+                    3'b001: alu_control = 4'b0110; // SLL
+                    3'b010: alu_control = 4'b0101; // SLT
+                    3'b011: alu_control = 4'b1000; // SLTU
+                    3'b100: alu_control = 4'b0100; // XOR
+                    3'b101: begin
+                        if (funct7[5]) alu_control = 4'b1001; // SRA
+                        else           alu_control = 4'b0111; // SRL
+                    end
+                    3'b110: alu_control = 4'b0011; // OR
+                    3'b111: alu_control = 4'b0010; // AND
                 endcase
             end
 
-            
+            // I-type ALU
             7'b0010011: begin
                 reg_write = 1;
-                alu_src = 1; 
-                
+                alu_src = 1;
+
                 case (funct3)
-                    3'b000: alu_control = 3'b000; // ADDI
-                    3'b110: alu_control = 3'b010; // ORI
-                    3'b111: alu_control = 3'b011; // ANDI
-                    3'b001: alu_control = 3'b110; // SLLI (Use your SLL code)
-                    3'b101: alu_control = 3'b111; // SRLI (Use your SRL code)
-                    default: alu_control = 3'b000;
+                    3'b000: alu_control = 4'b0000; // ADDI
+                    3'b010: alu_control = 4'b0101; // SLTI
+                    3'b011: alu_control = 4'b1000; // SLTIU
+                    3'b100: alu_control = 4'b0100; // XORI
+                    3'b110: alu_control = 4'b0011; // ORI
+                    3'b111: alu_control = 4'b0010; // ANDI
+                    3'b001: alu_control = 4'b0110; // SLLI
+                    3'b101: begin
+                        if (funct7[5]) alu_control = 4'b1001; // SRAI
+                        else           alu_control = 4'b0111; // SRLI
+                    end
+                    default: alu_control = 4'b0000;
                 endcase
             end
 
-            // LOAD (lw) -> Read from Memory, Write to Register
+            // Load (lw)
             7'b0000011: begin
-                reg_write = 1;      // Yes, we save the result
-                alu_src = 1;        // Address = Reg + Immediate
-                mem_write = 0;      // Read Only
-                result_src = 2'b01; // <--- KEY: Save Data from Memory, NOT ALU
-                alu_control = 3'b000; // ADD (to calculate address)
+                reg_write = 1;
+                alu_src = 1;
+                result_src = 2'b01;
+                alu_control = 4'b0000; // ADD (address calc)
             end
-            
-            //store
 
-            // B-type (BEQ, BNE, BLT, BGE)
+            // Store (sw)
+            7'b0100011: begin
+                alu_src = 1;
+                mem_write = 1;
+                alu_control = 4'b0000; // ADD (address calc)
+            end
+
+            // B-type (BEQ, BNE, BLT, BGE, BLTU, BGEU)
             7'b1100011: begin
                 branch = 1;
-                reg_write = 0;
-                alu_src = 0;        // Compare two registers
-                mem_write = 0;
-                result_src = 0;
+                alu_src = 0;
                 case (funct3)
-                    3'b000, 3'b001: alu_control = 3'b001; // BEQ/BNE: SUB
-                    3'b100, 3'b101: alu_control = 3'b101; // BLT/BGE: SLT
-                    default:        alu_control = 3'b001;
+                    3'b000, 3'b001: alu_control = 4'b0001; // BEQ/BNE: SUB
+                    3'b100, 3'b101: alu_control = 4'b0101; // BLT/BGE: SLT (signed)
+                    3'b110, 3'b111: alu_control = 4'b1000; // BLTU/BGEU: SLTU (unsigned)
+                    default:        alu_control = 4'b0001;
                 endcase
             end
 
-            7'b0100011: begin
-                reg_write = 0;
-                alu_src = 1;        // Address = Reg + Immediate
-                mem_write = 1;      // <--- KEY: Write ENABLED
-                result_src = 2'b00; // Doesn't matter (reg_write is 0)
-                alu_control = 3'b000; // ADD (to calculate address)
-            end
-
-            // JAL (Jump and Link)
+            // JAL
             7'b1101111: begin
                 reg_write = 1;
                 jump = 1;
-                result_src = 2'b10; // Write PC+4 to rd
+                result_src = 2'b10; // PC+4
             end
 
-            // JALR (Jump and Link Register)
+            // JALR
             7'b1100111: begin
                 reg_write = 1;
                 jalr = 1;
-                alu_src = 1;          // rs1 + immediate
-                alu_control = 3'b000; // ADD
-                result_src = 2'b10;   // Write PC+4 to rd
+                alu_src = 1;
+                alu_control = 4'b0000; // ADD
+                result_src = 2'b10;    // PC+4
+            end
+
+            // LUI
+            7'b0110111: begin
+                reg_write = 1;
+                alu_src = 1;
+                alu_src1 = 2'b10;      // srcA = 0
+                alu_control = 4'b0000; // ADD (0 + imm)
+            end
+
+            // AUIPC
+            7'b0010111: begin
+                reg_write = 1;
+                alu_src = 1;
+                alu_src1 = 2'b01;      // srcA = PC
+                alu_control = 4'b0000; // ADD (PC + imm)
             end
 
         endcase

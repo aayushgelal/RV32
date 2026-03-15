@@ -3,43 +3,58 @@ module top_tb;
     reg clk;
     reg reset;
 
-    // Instantiate the Full CPU (Top Module)
     top uut (
         .clk(clk),
         .reset(reset)
     );
 
-    // 1. Clock Generation (Flip every 5ns)
     always #5 clk = ~clk;
 
     initial begin
         $dumpfile("cpu_test.vcd");
         $dumpvars(0, top_tb);
-        
-      
-        // 2. Initialize
+
         clk = 0;
-        reset = 1; // Hold reset button
+        reset = 1;
 
-        // 3. Release Reset
         #10;
-        reset = 0; // Let the CPU run!
+        reset = 0;
 
-        // 4. Run for a few cycles
         #300;
 
-        // 5. Print register values to verify
-        $display("=== JAL / JALR Tests ===");
-        $display("--- TEST 1: JAL forward ---");
-        $display("x9  = %0d (expect 12, return addr 0x0C)",  uut.reg_unit.rf[9]);
-        $display("x3  = %0d (expect 0,  JAL skipped x3=1)",  uut.reg_unit.rf[3]);
-        $display("--- TEST 2: JALR ---");
-        $display("x4  = %0d (expect 40, target addr 0x28)",  uut.reg_unit.rf[4]);
-        $display("x5  = %0d (expect 36, return addr 0x24)",  uut.reg_unit.rf[5]);
-        $display("x6  = %0d (expect 0,  JALR skipped x6=1)", uut.reg_unit.rf[6]);
-        $display("--- TEST 3: Function call (JAL+JALR return) ---");
-        $display("x7  = %0d (expect 99, returned from function)", uut.reg_unit.rf[7]);
-        $display("x8  = %0d (expect 20, function body ran)",      uut.reg_unit.rf[8]);
+        $display("=== RV32I Complete Test Suite ===");
+
+        $display("--- Setup ---");
+        $display("x1  = %0d (expect 5)",   uut.reg_unit.rf[1]);
+        $display("x2  = %0d (expect 10)",  uut.reg_unit.rf[2]);
+        $display("x3  = %0h (expect ffffffff, -1)", uut.reg_unit.rf[3]);
+
+        $display("--- I-type: XORI, SLTI, SLTIU, SRAI ---");
+        $display("x4  = %0d (expect 10, xori 5^15)",        uut.reg_unit.rf[4]);
+        $display("x5  = %0d (expect 1,  slti 5<10)",        uut.reg_unit.rf[5]);
+        $display("x6  = %0d (expect 0,  slti 5<0 false)",   uut.reg_unit.rf[6]);
+        $display("x7  = %0d (expect 1,  sltiu 5<u max)",    uut.reg_unit.rf[7]);
+        $display("x8  = %0d (expect 1,  srai 5>>>2)",       uut.reg_unit.rf[8]);
+        $display("x9  = %0h (expect ffffffff, srai -1>>>1)", uut.reg_unit.rf[9]);
+
+        $display("--- R-type: SLTU, SRA ---");
+        $display("x10 = %0d (expect 1,  sltu 5<u10)",       uut.reg_unit.rf[10]);
+        $display("x11 = %0d (expect 0,  sltu 10<u5 false)", uut.reg_unit.rf[11]);
+        $display("x12 = %0h (expect ffffffff, sra -1>>>5)",  uut.reg_unit.rf[12]);
+
+        $display("--- BLTU ---");
+        $display("x13 = %0d (expect 0,  bltu taken)",       uut.reg_unit.rf[13]);
+        $display("x14 = %0d (expect 99, bltu not taken)",   uut.reg_unit.rf[14]);
+
+        $display("--- BGEU ---");
+        $display("x15 = %0d (expect 0,  bgeu taken)",       uut.reg_unit.rf[15]);
+        $display("x16 = %0d (expect 99, bgeu not taken)",   uut.reg_unit.rf[16]);
+
+        $display("--- LUI ---");
+        $display("x20 = %0h (expect deadb000)",             uut.reg_unit.rf[20]);
+
+        $display("--- AUIPC ---");
+        $display("x21 = %0h (expect 1064)",                 uut.reg_unit.rf[21]);
 
         $finish;
     end

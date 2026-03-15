@@ -1,23 +1,43 @@
-00500093  // 0x00: addi x1, x0, 5     (x1 = 5)
-00A00113  // 0x04: addi x2, x0, 10    (x2 = 10)
+// === SETUP ===
+00500093  // 0x00: addi  x1, x0, 5       (x1 = 5)
+00A00113  // 0x04: addi  x2, x0, 10      (x2 = 10)
+FFF00193  // 0x08: addi  x3, x0, -1      (x3 = -1 = 0xFFFFFFFF)
 
-// --- TEST 1: JAL - jump forward, save return address ---
-00C004EF  // 0x08: jal  x9, +12       (x9 = PC+4 = 0x0C, jump to 0x14)
-00100193  // 0x0C: addi x3, x0, 1     (SKIPPED)
-00100193  // 0x10: addi x3, x0, 1     (SKIPPED)
-00000193  // 0x14: addi x3, x0, 0     (x3 = 0, JAL lands here)
+// === I-type: XORI, SLTI, SLTIU, SRAI ===
+00F0C213  // 0x0C: xori  x4, x1, 15      (x4 = 5 ^ 15 = 10)
+00A0A293  // 0x10: slti  x5, x1, 10      (x5 = 1, signed 5 < 10)
+0000A313  // 0x14: slti  x6, x1, 0       (x6 = 0, signed 5 < 0 false)
+FFF0B393  // 0x18: sltiu x7, x1, -1      (x7 = 1, unsigned 5 < 0xFFFFFFFF)
+4020D413  // 0x1C: srai  x8, x1, 2       (x8 = 5 >>> 2 = 1)
+4011D493  // 0x20: srai  x9, x3, 1       (x9 = -1 >>> 1 = -1 = 0xFFFFFFFF)
 
-// --- TEST 2: JALR - jump to register+offset, save return address ---
-01400213  // 0x18: addi x4, x0, 20    (x4 = 20 = 0x14... need 0x28)
-02800213  // 0x1C: addi x4, x0, 40    (x4 = 0x28)
-000202E7  // 0x20: jalr x5, x4, 0     (x5 = PC+4 = 0x24, jump to x4+0 = 0x28)
-00100313  // 0x24: addi x6, x0, 1     (SKIPPED)
-00000313  // 0x28: addi x6, x0, 0     (x6 = 0, JALR lands here)
+// === R-type: SLTU, SRA ===
+0020B533  // 0x24: sltu  x10, x1, x2     (x10 = 1, 5 <u 10)
+001135B3  // 0x28: sltu  x11, x2, x1     (x11 = 0, 10 <u 5 false)
+4011D633  // 0x2C: sra   x12, x3, x1     (x12 = -1 >>> 5 = -1 = 0xFFFFFFFF)
 
-// --- TEST 3: Function call pattern (JAL to "function", JALR back) ---
-010000EF  // 0x2C: jal  x1, +16       (x1 = 0x30, jump to 0x3C = "function")
-06300393  // 0x30: addi x7, x0, 99    (x7 = 99, returned here from function)
-00000013  // 0x34: addi x0, x0, 0     (NOP - end)
-00000013  // 0x38: addi x0, x0, 0     (NOP - end)
-01400413  // 0x3C: addi x8, x0, 20    (x8 = 20, "function body")
-00008067  // 0x40: jalr x0, x1, 0     (jump back to x1 = 0x30, discard return addr)
+// === BLTU taken (5 <u 0xFFFFFFFF) ===
+0030E663  // 0x30: bltu  x1, x3, +12     (jump to 0x3C)
+00100693  // 0x34: addi  x13, x0, 1      (SKIPPED)
+00100693  // 0x38: addi  x13, x0, 1      (SKIPPED)
+00000693  // 0x3C: addi  x13, x0, 0      (x13 = 0, landed)
+
+// === BLTU not taken (0xFFFFFFFF >u 5) ===
+0011E463  // 0x40: bltu  x3, x1, +8      (NOT taken)
+06300713  // 0x44: addi  x14, x0, 99     (x14 = 99, executed)
+
+// === BGEU taken (0xFFFFFFFF >=u 5) ===
+0011F663  // 0x48: bgeu  x3, x1, +12     (jump to 0x54)
+00100793  // 0x4C: addi  x15, x0, 1      (SKIPPED)
+00100793  // 0x50: addi  x15, x0, 1      (SKIPPED)
+00000793  // 0x54: addi  x15, x0, 0      (x15 = 0, landed)
+
+// === BGEU not taken (5 <u 0xFFFFFFFF) ===
+0030F463  // 0x58: bgeu  x1, x3, +8      (NOT taken)
+06300813  // 0x5C: addi  x16, x0, 99     (x16 = 99, executed)
+
+// === LUI ===
+DEADBA37  // 0x60: lui   x20, 0xDEADB    (x20 = 0xDEADB000)
+
+// === AUIPC ===
+00001A97  // 0x64: auipc x21, 1           (x21 = 0x64 + 0x1000 = 0x1064)

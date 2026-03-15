@@ -21,6 +21,10 @@ module imm_gen(
             7'b1100111: // I-type (JALR)
                 imm_ext = {{20{instr[31]}}, instr[31:20]};
 
+            7'b0110111, // LUI
+            7'b0010111: // AUIPC
+                imm_ext = {instr[31:12], 12'b0};
+
             default:
                 imm_ext = 32'b0;
         endcase
