@@ -128,6 +128,13 @@ module control(
                 alu_control = 4'b0000; // ADD (PC + imm)
             end
 
+            // Custom-0: ROL (Rotate Left) — R-type
+            7'b0001011: begin
+                reg_write = 1;
+                alu_src = 0;
+                alu_control = 4'b1010; // ROL
+            end
+
         endcase
     end
 endmodule

@@ -18,6 +18,7 @@ module alu(
             4'b0111: result = src1 >> src2[4:0];                              // SRL
             4'b1000: result = (src1 < src2) ? 1 : 0;                         // SLTU (unsigned)
             4'b1001: result = $signed(src1) >>> src2[4:0];                    // SRA
+            4'b1010: result = (src1 << src2[4:0]) | (src1 >> (32 - src2[4:0])); // ROL (custom)
             default: result = 32'b0;
         endcase
     end
