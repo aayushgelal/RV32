@@ -45,6 +45,14 @@ module top_tb;
         $display("x11 = %0d (expect 5)",                      uut.reg_unit.rf[11]);
         $display("x12 = %0d (expect 0,  branch taken)",       uut.reg_unit.rf[12]);
 
+        $display("");
+        $display("=== Performance Counters ===");
+        $display("Cycles         = %0d", uut.perf_cycles);
+        $display("Instructions   = %0d", uut.perf_instrs);
+        $display("Stalls         = %0d", uut.perf_stalls);
+        $display("Flushes        = %0d", uut.perf_flushes);
+        $display("CPI            = %0f", $itor(uut.perf_cycles) / $itor(uut.perf_instrs));
+
         $finish;
     end
 

@@ -30,6 +30,9 @@ module top(
     reg [1:0]  id_ex_result_src, id_ex_alu_src1;
     reg [3:0]  id_ex_alu_control;
 
+    // Pipeline valid bits (for accurate instruction counting)
+    reg id_ex_valid, ex_mem_valid, mem_wb_valid;
+
     // EX stage
     wire [31:0] ex_alu_result, ex_srcB_mux;
     wire [31:0] ex_branch_target, ex_jalr_target;
@@ -65,6 +68,45 @@ module top(
     wire stall;
 
     assign flush = ex_branch_taken || id_ex_jump || id_ex_jalr;
+
+    // =========================================================
+    //  PERFORMANCE COUNTERS
+    // =========================================================
+    reg [31:0] perf_cycles;
+    reg [31:0] perf_instrs;     // Instructions retired (committed)
+    reg [31:0] perf_stalls;     // Stall cycles (load-use)
+    reg [31:0] perf_flushes;    // Flushed instructions (branch/jump)
+    reg        perf_halted;     // Freeze counters on halt loop
+
+    // Detect halt: JAL x0,0 in EX stage (jump to self, rd=x0)
+    wire halt_detected = id_ex_jump && (id_ex_rd == 5'b0) &&
+                         (id_ex_imm_ext == 32'b0);
+
+    always @(posedge clk) begin
+        if (reset) begin
+            perf_cycles  <= 0;
+            perf_instrs  <= 0;
+            perf_stalls  <= 0;
+            perf_flushes <= 0;
+            perf_halted  <= 0;
+        end else begin
+            if (halt_detected)
+                perf_halted <= 1;
+
+            if (!perf_halted) begin
+                perf_cycles <= perf_cycles + 1;
+
+                if (mem_wb_valid)
+                    perf_instrs <= perf_instrs + 1;
+
+                if (stall)
+                    perf_stalls <= perf_stalls + 1;
+
+                if (flush)
+                    perf_flushes <= perf_flushes + 1;
+            end
+        end
+    end
 
     // =========================================================
     //  HAZARD DETECTION (Load-Use Stall)
@@ -167,6 +209,7 @@ module top(
             id_ex_imm_ext     <= 32'b0;
             id_ex_rs1         <= 5'b0;
             id_ex_rs2         <= 5'b0;
+            id_ex_valid       <= 0;
         end else begin
             id_ex_pc          <= if_id_pc;
             id_ex_pc_plus4    <= if_id_pc_plus4;
@@ -186,6 +229,7 @@ module top(
             id_ex_result_src  <= id_result_src;
             id_ex_alu_src1    <= id_alu_src1;
             id_ex_alu_control <= id_alu_control;
+            id_ex_valid       <= 1;
         end
     end
 
@@ -292,6 +336,7 @@ module top(
             ex_mem_reg_write  <= 0;
             ex_mem_mem_write  <= 0;
             ex_mem_result_src <= 2'b0;
+            ex_mem_valid      <= 0;
         end else begin
             ex_mem_alu_result <= ex_alu_result;
             ex_mem_rd2        <= ex_rd2_fwd;  // Use forwarded value for stores
@@ -300,6 +345,7 @@ module top(
             ex_mem_reg_write  <= id_ex_reg_write;
             ex_mem_mem_write  <= id_ex_mem_write;
             ex_mem_result_src <= id_ex_result_src;
+            ex_mem_valid      <= id_ex_valid;
         end
     end
 
@@ -327,6 +373,7 @@ module top(
             mem_wb_rd         <= 5'b0;
             mem_wb_reg_write  <= 0;
             mem_wb_result_src <= 2'b0;
+            mem_wb_valid      <= 0;
         end else begin
             mem_wb_alu_result <= ex_mem_alu_result;
             mem_wb_read_data  <= mem_read_data;
@@ -334,6 +381,7 @@ module top(
             mem_wb_rd         <= ex_mem_rd;
             mem_wb_reg_write  <= ex_mem_reg_write;
             mem_wb_result_src <= ex_mem_result_src;
+            mem_wb_valid      <= ex_mem_valid;
         end
     end
 

@@ -15,7 +15,11 @@ always @(posedge clk) begin
         rf[a3]=wd3;
     
 end
-    assign rd1 = (a1 != 0) ? rf[a1] : 32'b0;
-    assign rd2 = (a2 != 0) ? rf[a2] : 32'b0;
+    // Write-through: if WB writes the same register ID is reading
+    // in the same cycle, forward the written value directly.
+    assign rd1 = (a1 == 5'b0)                  ? 32'b0 :
+                 (we3 && a3 == a1 && a3 != 5'b0) ? wd3   : rf[a1];
+    assign rd2 = (a2 == 5'b0)                  ? 32'b0 :
+                 (we3 && a3 == a2 && a3 != 5'b0) ? wd3   : rf[a2];
 
 endmodule
